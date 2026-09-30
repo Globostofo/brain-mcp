@@ -61,7 +61,7 @@ Goal: players cannot reach the brain, and the brain account cannot reach the gam
    - Client type: **Confidential**
    - Redirect URIs: Strict, `https://brain.globostofo.net/auth/callback`
    - Signing key: **`brain-signing`**; Encryption key: empty (encrypted tokens could not be verified by the server)
-   - Scopes: `openid`, `email`, `profile`
+   - Scopes (Advanced protocol settings): `openid`, `email`, `profile` **and `offline_access`** (without it the SSO issues no refresh token, and claude.ai is logged out when the access token expires, after 5 minutes by default)
    - Refresh token validity (optional): e.g. `days=90`, otherwise claude.ai asks to log in again after 30 days
    - Note the Client ID and Client Secret.
 5. **Application**: Applications → Applications → Create, name `brain`, slug **`brain`** (part of `OIDC_CONFIG_URL`), provider `brain`. Then Policy / Group / User Bindings → Bind existing → Group → **`brain`**.

@@ -33,6 +33,9 @@ Markdown notes versioned with git and shared with Claude Code on his PCs.
 """
 
 
+UPSTREAM_SCOPES = "openid profile email offline_access"
+
+
 def env(name: str, default: str | None = None) -> str:
     value = os.environ.get(name, default)
     if value is None:
@@ -61,6 +64,9 @@ def build_auth(base_url: str):
         client_secret=env("OIDC_CLIENT_SECRET"),
         base_url=base_url,
         jwt_signing_key=env("JWT_SIGNING_KEY"),
+        # claude.ai requests no scope; without offline_access the SSO issues no refresh
+        # token and the connector is logged out when the access token expires
+        extra_authorize_params={"scope": UPSTREAM_SCOPES},
         allowed_client_redirect_uris=[
             "https://claude.ai/api/mcp/auth_callback",
             "https://claude.com/api/mcp/auth_callback",
