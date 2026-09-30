@@ -47,7 +47,7 @@ Goal: players cannot reach the brain, and the brain account cannot reach the gam
    - Directory → Groups → Create: `brain`.
    - Directory → Users → Create: username **`brain`** (must match `ALLOWED_USERNAME`), type **Internal**, not superuser. Add it to the `brain` group, then set a strong password (user → Set password).
 2. **Dedicated login flow**: Flows and Stages → Flows → Create
-   - Name/slug: `brain-authentication`, designation **Authentication**.
+   - Name/slug: `brain-authentication`, designation **Authentication**, behavior setting Authentication: **No requirement** (any other value denies the flow when opened directly), no policy bound to the flow itself.
    - Stage bindings, in order:
      - 10 — new Identification stage `brain-identification`: user fields **Username** only, **no sources** (no Google/Discord buttons), no enrollment/recovery flow.
      - 20 — new Password stage `brain-password`.
@@ -66,7 +66,7 @@ Goal: players cannot reach the brain, and the brain account cannot reach the gam
    - Note the Client ID and Client Secret.
 5. **Application**: Applications → Applications → Create, name `brain`, slug **`brain`** (part of `OIDC_CONFIG_URL`), provider `brain`. Then Policy / Group / User Bindings → Bind existing → Group → **`brain`**.
    An application without any binding is open to every SSO user: this binding is what keeps players out. The server also checks `ALLOWED_USERNAME` on every call, in case the binding is ever removed.
-6. **Keep the brain account out of the games**: Customization → Policies → Create → Expression Policy `deny-brain-group`:
+6. *(Optional, skipped in the current setup)* **Keep the brain account out of the games** — without it, the `brain` account could log in to a game like any player, but claude.ai never holds a token valid for the games: Customization → Policies → Create → Expression Policy `deny-brain-group`:
    ```python
    return not ak_is_group_member(request.user, name="brain")
    ```
