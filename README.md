@@ -52,7 +52,7 @@ Goal: players cannot reach the brain, and the brain account cannot reach the gam
      - 10 — new Identification stage `brain-identification`: user fields **Username** only, **no sources** (no Google/Discord buttons), no enrollment/recovery flow.
      - 20 — new Password stage `brain-password`.
      - 30 — new Authenticator Validation stage `brain-mfa`: device classes **TOTP only**, "Not configured action": **Force the user to configure an authenticator**, configuration stage: `brain-totp-setup` (a TOTP Authenticator Setup stage created beforehand in Flows and Stages → Stages, 6 digits, not bound to any flow), last validation threshold `seconds=0`.
-     - 40 — the existing User Login stage (`default-authentication-login`).
+     - 40 — new User Login stage `brain-login`: session duration `seconds=0`, stay signed in offset `seconds=0` (a dedicated stage, so that tuning the default one for players never affects the brain).
 3. **Signing key**: System → Certificates → Generate: `brain-signing` (tokens of the brain are not signed with the games' key).
 4. **Provider**: Applications → Providers → Create → OAuth2/OpenID Provider
    - Name: `brain`
