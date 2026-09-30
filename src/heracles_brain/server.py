@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from anyio import to_thread
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.dependencies import get_access_token
 
 from heracles_brain.vault import Vault, VaultError
 
@@ -67,10 +68,21 @@ def build_auth(base_url: str):
     )
 
 
-def build_server(vault: Vault, auth=None) -> FastMCP:
+def token_username() -> str | None:
+    token = get_access_token()
+    return (token.claims or {}).get("preferred_username") if token else None
+
+
+def build_server(
+    vault: Vault, auth=None, allowed_user: str | None = None, current_user=token_username
+) -> FastMCP:
+    """`allowed_user` is checked on every call, on top of the SSO policy binding,
+    so that a missing binding cannot open the brain to other SSO accounts."""
     mcp = FastMCP(name="brain", instructions=INSTRUCTIONS, auth=auth)
 
     async def call(fn, *args):
+        if allowed_user is not None and current_user() != allowed_user:
+            raise ToolError("Access denied: this account is not allowed to use the brain")
         try:
             return await to_thread.run_sync(fn, *args)
         except VaultError as e:
@@ -113,7 +125,9 @@ def main() -> None:
     root = Path(env("BRAIN_DIR", "/data/brain"))
     ensure_clone(root)
     vault = Vault(root, host_label=env("SYNC_HOST_LABEL", "heracles"))
-    mcp = build_server(vault, build_auth(base_url))
+    auth = build_auth(base_url)
+    allowed_user = env("ALLOWED_USERNAME") if auth else None
+    mcp = build_server(vault, auth, allowed_user)
     mcp.run(
         transport="http",
         host="0.0.0.0",

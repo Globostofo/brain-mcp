@@ -35,6 +35,19 @@ async def test_tools_end_to_end(server, origin: Path) -> None:
             await client.call_tool("read_note", {"path": ".sync/CLAUDE.md"})
 
 
+@pytest.mark.anyio
+async def test_other_account_is_denied(origin: Path, tmp_path: Path) -> None:
+    vault = Vault(clone(origin, tmp_path / "vault"), pull_interval=0)
+    for user in ("player42", None):
+        server = build_server(vault, allowed_user="brain", current_user=lambda: user)
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="Access denied"):
+                await client.call_tool("read_note", {"path": "_index"})
+    server = build_server(vault, allowed_user="brain", current_user=lambda: "brain")
+    async with Client(server) as client:
+        assert (await client.call_tool("read_note", {"path": "_index"})).data
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
