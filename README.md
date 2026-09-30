@@ -39,7 +39,7 @@ gh repo deploy-key add deploy_key.pub --repo Globostofo/brain --allow-write --ti
 
 ### 2. OIDC provider in the SSO
 
-**[dev — browser, via VPN]** In the admin panel (`https://auth.globostofo.net/if/admin/`):
+**[dev — browser, via VPN]** In the admin panel (`http://192.168.1.123:9000/if/admin/`; it is blocked on `auth.globostofo.net`, see the heracles-auth README):
 
 1. Applications → Providers → Create → **OAuth2/OpenID Provider**
    - Name: `brain`
