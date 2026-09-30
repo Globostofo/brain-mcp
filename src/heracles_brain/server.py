@@ -115,7 +115,14 @@ def build_server(
     async def write_note(path: str, content: str) -> str:
         """Create a note or replace its whole content, then commit and push.
         Path is relative to the brain root and must end in .md."""
-        return f"Saved {await call(vault.write, path, content)}"
+        rel, created = await call(vault.write, path, content)
+        if not created:
+            return f"Saved {rel}"
+        return (
+            f"Created {rel}. Reminder: this is a new note. If it matters, add it to the "
+            "matching section of `_index.md` (with `edit_note`), and link it from related "
+            "notes (`[[" + rel.rsplit("/", 1)[-1].removesuffix(".md") + "]]`)."
+        )
 
     @mcp.tool(annotations={"destructiveHint": False})
     async def edit_note(path: str, old: str, new: str) -> str:

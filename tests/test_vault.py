@@ -37,8 +37,9 @@ def test_write_rejects_non_markdown(vault: Vault) -> None:
 
 
 def test_write_commits_and_pushes(vault: Vault, origin: Path) -> None:
-    assert vault.write("setup/new.md", "# New\n") == "setup/new.md"
-    assert origin_file(origin, "setup/new.md") == "# New\n"
+    assert vault.write("setup/new.md", "# New\n") == ("setup/new.md", True)
+    assert vault.write("setup/new.md", "# New v2\n") == ("setup/new.md", False)
+    assert origin_file(origin, "setup/new.md") == "# New v2\n"
     assert git(origin, "log", "-1", "--format=%s", "main").startswith("sync: heracles ")
 
 

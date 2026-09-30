@@ -31,6 +31,12 @@ async def test_tools_end_to_end(server, origin: Path) -> None:
         await client.call_tool("edit_note", {"path": "demo", "old": "Traefik", "new": "Caddy"})
         assert "Uses Caddy" in origin_file(origin, "projects/demo/demo.md")
 
+        created = await client.call_tool("write_note", {"path": "setup/new.md", "content": "x\n"})
+        assert created.data.startswith("Created setup/new.md. Reminder")
+        assert "`_index.md`" in created.data and "[[new]]" in created.data
+        replaced = await client.call_tool("write_note", {"path": "setup/new.md", "content": "y\n"})
+        assert replaced.data == "Saved setup/new.md"
+
         with pytest.raises(ToolError, match="Hidden paths"):
             await client.call_tool("read_note", {"path": ".sync/CLAUDE.md"})
 

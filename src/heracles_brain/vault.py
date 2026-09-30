@@ -161,17 +161,19 @@ class Vault:
                 raise VaultError(f"No such note: {name}")
             return self._rel(path), path.read_text(encoding="utf-8")
 
-    def write(self, rel: str, content: str) -> str:
+    def write(self, rel: str, content: str) -> tuple[str, bool]:
+        """Returns the note path and whether the note was created."""
         with self._lock:
             self._pull()
             path = self._resolve(rel)
             if path.suffix != ".md":
                 raise VaultError("Only .md notes can be written")
+            created = not path.exists()
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             rel = self._rel(path)
             self._commit_and_push(rel)
-            return rel
+            return rel, created
 
     def edit(self, name: str, old: str, new: str) -> str:
         if not old:
