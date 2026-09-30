@@ -50,6 +50,12 @@ Goal: players cannot reach the brain, and the brain account cannot reach the gam
    - Name/slug: `brain-authentication`, designation **Authentication**, behavior setting Authentication: **No requirement** (any other value denies the flow when opened directly), no policy bound to the flow itself.
    - Stage bindings, in order:
      - 10 — new Identification stage `brain-identification`: user fields **Username** only, **no sources** (no Google/Discord buttons), no enrollment/recovery flow.
+     - 15 — new Deny stage `brain-deny`, binding with **Evaluate when flow is planned unchecked** and **Evaluate when stage is run checked**, and bound to a new Expression Policy `brain-not-member`:
+       ```python
+       user = request.context.get("pending_user")
+       return not (user and ak_is_group_member(user, name="brain"))
+       ```
+       Any account outside the `brain` group (e.g. a player with a local password) is denied right after its username, before the password. Do not bind this policy to the password stage instead: a stage whose policy fails is skipped, not denied.
      - 20 — new Password stage `brain-password`.
      - 30 — new Authenticator Validation stage `brain-mfa`: device classes **TOTP only**, "Not configured action": **Force the user to configure an authenticator**, configuration stage: `brain-totp-setup` (a TOTP Authenticator Setup stage created beforehand in Flows and Stages → Stages, 6 digits, not bound to any flow), last validation threshold `seconds=0`.
      - 40 — new User Login stage `brain-login`: session duration `seconds=0`, stay signed in offset `seconds=0` (a dedicated stage, so that tuning the default one for players never affects the brain).
