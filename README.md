@@ -53,14 +53,14 @@ Goal: players cannot reach the brain, and the brain account cannot reach the gam
      - 20 — new Password stage `brain-password`.
      - 30 — new Authenticator Validation stage `brain-mfa`: device classes **TOTP only**, "Not configured action": **Force the user to configure an authenticator**, configuration stage: `brain-totp-setup` (a TOTP Authenticator Setup stage created beforehand in Flows and Stages → Stages, 6 digits, not bound to any flow), last validation threshold `seconds=0`.
      - 40 — new User Login stage `brain-login`: session duration `seconds=0`, stay signed in offset `seconds=0` (a dedicated stage, so that tuning the default one for players never affects the brain).
-3. **Signing key**: System → Certificates → Generate: `brain-signing` (tokens of the brain are not signed with the games' key).
+3. **Signing key**: System → Certificates → Generate: common name `brain-signing`, validity `3650` days, private key algorithm **RSA** (the server verifies RS256 by default; an ECDSA key would fail). Tokens of the brain are not signed with the games' key.
 4. **Provider**: Applications → Providers → Create → OAuth2/OpenID Provider
    - Name: `brain`
    - Authentication flow: **`brain-authentication`**
    - Authorization flow: `default-provider-authorization-explicit-consent`
    - Client type: **Confidential**
    - Redirect URIs: Strict, `https://brain.globostofo.net/auth/callback`
-   - Signing key: **`brain-signing`**
+   - Signing key: **`brain-signing`**; Encryption key: empty (encrypted tokens could not be verified by the server)
    - Scopes: `openid`, `email`, `profile`
    - Refresh token validity (optional): e.g. `days=90`, otherwise claude.ai asks to log in again after 30 days
    - Note the Client ID and Client Secret.
