@@ -1,0 +1,8 @@
+.env
+deploy_key
+deploy_key.pub
+.venv/
+__pycache__/
+*.egg-info/
+build/
+.pytest_cache/

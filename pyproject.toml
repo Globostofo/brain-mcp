@@ -1,0 +1,19 @@
+[project]
+name = "heracles-brain"
+version = "0.1.0"
+description = "Remote MCP server exposing the brain vault to claude.ai"
+requires-python = ">=3.12"
+dependencies = ["fastmcp>=4.0,<5"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+heracles-brain = "heracles_brain.server:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
