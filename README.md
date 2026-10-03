@@ -41,28 +41,30 @@ gh repo deploy-key add deploy_key.pub --repo Globostofo/brain --allow-write --ti
 
 Goal: players cannot reach the brain, and the brain account cannot reach the games. The SSO has a single user directory shared by all apps, so the isolation relies on a dedicated account, flow, signing key and bindings.
 
+The account, group and login flow are named `assistant`: they are shared by all of Romain's assistant connectors (e.g. pantry-mcp). The provider, application and signing key stay specific to the brain. Steps 1 and 2 are only done once, for the first connector.
+
 **[dev — browser, via VPN]** In the admin panel (`http://192.168.1.123:9000/if/admin/`; it is blocked on `auth.globostofo.net`, see the heracles-auth README):
 
 1. **Group and account**
-   - Directory → Groups → Create: `brain`.
-   - Directory → Users → Create: username **`brain`** (must match `ALLOWED_USERNAME`), type **Internal**, not superuser. Add it to the `brain` group, then set a strong password (user → Set password).
+   - Directory → Groups → Create: `assistant`.
+   - Directory → Users → Create: username **`assistant`** (must match `ALLOWED_USERNAME`), type **Internal**, not superuser. Add it to the `assistant` group, then set a strong password (user → Set password).
 2. **Dedicated login flow**: Flows and Stages → Flows → Create
-   - Name/slug: `brain-authentication`, designation **Authentication**, behavior setting Authentication: **No requirement** (any other value denies the flow when opened directly), no policy bound to the flow itself.
+   - Name/slug: `assistant-authentication`, designation **Authentication**, behavior setting Authentication: **No requirement** (any other value denies the flow when opened directly), no policy bound to the flow itself.
    - Stage bindings, in order:
-     - 10 — new Identification stage `brain-identification`: user fields **Username** only, **no sources** (no Google/Discord buttons), no enrollment/recovery flow.
-     - 15 — new Deny stage `brain-deny`, binding with **Evaluate when flow is planned unchecked** and **Evaluate when stage is run checked**, and bound to a new Expression Policy `brain-not-member`:
+     - 10 — new Identification stage `assistant-identification`: user fields **Username** only, **no sources** (no Google/Discord buttons), no enrollment/recovery flow.
+     - 15 — new Deny stage `assistant-deny`, binding with **Evaluate when flow is planned unchecked** and **Evaluate when stage is run checked**, and bound to a new Expression Policy `assistant-not-member`:
        ```python
        user = request.context.get("pending_user")
-       return not (user and ak_is_group_member(user, name="brain"))
+       return not (user and ak_is_group_member(user, name="assistant"))
        ```
-       Any account outside the `brain` group (e.g. a player with a local password) is denied right after its username, before the password. Do not bind this policy to the password stage instead: a stage whose policy fails is skipped, not denied.
-     - 20 — new Password stage `brain-password`.
-     - 30 — new Authenticator Validation stage `brain-mfa`: device classes **TOTP only**, "Not configured action": **Force the user to configure an authenticator**, configuration stage: `brain-totp-setup` (a TOTP Authenticator Setup stage created beforehand in Flows and Stages → Stages, 6 digits, not bound to any flow), last validation threshold `seconds=0`.
-     - 40 — new User Login stage `brain-login`: session duration `seconds=0`, stay signed in offset `seconds=0` (a dedicated stage, so that tuning the default one for players never affects the brain).
+       Any account outside the `assistant` group (e.g. a player with a local password) is denied right after its username, before the password. Do not bind this policy to the password stage instead: a stage whose policy fails is skipped, not denied.
+     - 20 — new Password stage `assistant-password`.
+     - 30 — new Authenticator Validation stage `assistant-mfa`: device classes **TOTP only**, "Not configured action": **Force the user to configure an authenticator**, configuration stage: `assistant-totp-setup` (a TOTP Authenticator Setup stage created beforehand in Flows and Stages → Stages, 6 digits, not bound to any flow), last validation threshold `seconds=0`.
+     - 40 — new User Login stage `assistant-login`: session duration `seconds=0`, stay signed in offset `seconds=0` (a dedicated stage, so that tuning the default one for players never affects the assistant connectors).
 3. **Signing key**: System → Certificates → Generate: common name `brain-signing`, validity `3650` days, private key algorithm **RSA** (the server verifies RS256 by default; an ECDSA key would fail). Tokens of the brain are not signed with the games' key.
 4. **Provider**: Applications → Providers → Create → OAuth2/OpenID Provider
    - Name: `brain`
-   - Authentication flow: **`brain-authentication`**
+   - Authentication flow: **`assistant-authentication`**
    - Authorization flow: `default-provider-authorization-explicit-consent`
    - Client type: **Confidential**
    - Redirect URIs: Strict, `https://brain.globostofo.net/auth/callback`
@@ -70,14 +72,14 @@ Goal: players cannot reach the brain, and the brain account cannot reach the gam
    - Scopes (Advanced protocol settings): `openid`, `email`, `profile` **and `offline_access`** (without it the SSO issues no refresh token, and claude.ai is logged out when the access token expires, after 5 minutes by default)
    - Refresh token validity (optional): e.g. `days=90`, otherwise claude.ai asks to log in again after 30 days
    - Note the Client ID and Client Secret.
-5. **Application**: Applications → Applications → Create, name `brain`, slug **`brain`** (part of `OIDC_CONFIG_URL`), provider `brain`. Then Policy / Group / User Bindings → Bind existing → Group → **`brain`**.
+5. **Application**: Applications → Applications → Create, name `brain`, slug **`brain`** (part of `OIDC_CONFIG_URL`), provider `brain`. Then Policy / Group / User Bindings → Bind existing → Group → **`assistant`**.
    An application without any binding is open to every SSO user: this binding is what keeps players out. The server also checks `ALLOWED_USERNAME` on every call, in case the binding is ever removed.
-6. *(Optional, skipped in the current setup)* **Keep the brain account out of the games** — without it, the `brain` account could log in to a game like any player, but claude.ai never holds a token valid for the games: Customization → Policies → Create → Expression Policy `deny-brain-group`:
+6. *(Optional, skipped in the current setup)* **Keep the assistant account out of the games** — without it, the `assistant` account could log in to a game like any player, but claude.ai never holds a token valid for the games: Customization → Policies → Create → Expression Policy `deny-assistant-group`:
    ```python
-   return not ak_is_group_member(request.user, name="brain")
+   return not ak_is_group_member(request.user, name="assistant")
    ```
    Bind it to every game application (e.g. Fisharia), then check that a player can still log in to the game.
-7. **Enroll the second factor right away**: open `https://auth.globostofo.net/if/flow/brain-authentication/` in a private window, log in as `brain` and scan the TOTP QR code. Until this is done, anyone with the password could enroll their own device.
+7. **Enroll the second factor right away**: open `https://auth.globostofo.net/if/flow/assistant-authentication/` in a private window, log in as `assistant` and scan the TOTP QR code. Until this is done, anyone with the password could enroll their own device.
 
 claude.ai never receives SSO tokens: the server keeps them and gives claude.ai its own tokens, only valid for this server.
 
@@ -91,7 +93,7 @@ cp .env.example .env
 # JWT_SIGNING_KEY
 openssl rand -base64 36
 
-# Fill in OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and JWT_SIGNING_KEY (ALLOWED_USERNAME=brain is already set)
+# Fill in OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and JWT_SIGNING_KEY (ALLOWED_USERNAME=assistant is already set)
 nano .env
 ```
 
@@ -134,7 +136,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://brain.globostofo.net/mc
 - URL: `https://brain.globostofo.net/mcp`
 - Leave the advanced OAuth settings empty (the server supports dynamic client registration)
 
-Then Connect, log in with the `brain` account (password + second factor) and approve. If the browser already has an SSO session with another account (e.g. a player account), the SSO reuses it and denies access: log out of `auth.globostofo.net` first, or connect from a private window. The connector is then available on web, desktop and mobile.
+Then Connect, log in with the `assistant` account (password + second factor) and approve. If the browser already has an SSO session with another account (e.g. a player account), the SSO reuses it and denies access: log out of `auth.globostofo.net` first, or connect from a private window. The connector is then available on web, desktop and mobile.
 
 ## Development
 
