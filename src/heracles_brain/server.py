@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import subprocess
 import sys
@@ -34,6 +35,11 @@ Markdown notes versioned with git and shared with Claude Code on his PCs.
 
 
 UPSTREAM_SCOPES = "openid profile email offline_access"
+# claude.ai does not show the server instructions to the model, only tool descriptions
+INDEX_FIRST = (
+    "At the start of a task, read the note `_index` first (`read_note(\"_index\")`): it "
+    "explains how the brain is organized and links to the todo and to the rules to follow."
+)
 
 
 def env(name: str, default: str | None = None) -> str:
@@ -86,6 +92,15 @@ def build_server(
     so that a missing binding cannot open the brain to other SSO accounts."""
     mcp = FastMCP(name="brain", instructions=INSTRUCTIONS, auth=auth)
 
+    def tool(name: str | None = None, annotations: dict | None = None):
+        """Register a tool whose description is its docstring followed by INDEX_FIRST."""
+
+        def register(fn):
+            description = f"{inspect.getdoc(fn)}\n\n{INDEX_FIRST}"
+            return mcp.tool(name=name, annotations=annotations, description=description)(fn)
+
+        return register
+
     async def call(fn, *args):
         if allowed_user is not None and current_user() != allowed_user:
             raise ToolError("Access denied: this account is not allowed to use the brain")
@@ -94,24 +109,24 @@ def build_server(
         except VaultError as e:
             raise ToolError(str(e)) from e
 
-    @mcp.tool(name="list", annotations={"readOnlyHint": True})
+    @tool(name="list", annotations={"readOnlyHint": True})
     async def list_notes(dir: str = "") -> str:
         """List the Markdown notes of the brain, optionally under a directory (e.g. "projects")."""
         return "\n".join(await call(vault.list, dir))
 
-    @mcp.tool(annotations={"readOnlyHint": True})
+    @tool(annotations={"readOnlyHint": True})
     async def search(query: str, dir: str = "") -> str:
         """Case-insensitive search in note contents and file names. Returns `path:line: excerpt`."""
         hits = await call(vault.search, query, dir)
         return "\n".join(hits) or "No match"
 
-    @mcp.tool(annotations={"readOnlyHint": True})
+    @tool(annotations={"readOnlyHint": True})
     async def read_note(path: str) -> str:
         """Read a note by relative path ("setup/brain-sync.md") or by note name ("brain-sync")."""
         rel, content = await call(vault.read, path)
         return f"<!-- {rel} -->\n{content}"
 
-    @mcp.tool(annotations={"destructiveHint": True})
+    @tool(annotations={"destructiveHint": True})
     async def write_note(path: str, content: str) -> str:
         """Create a note or replace its whole content, then commit and push.
         Path is relative to the brain root and must end in .md."""
@@ -124,7 +139,7 @@ def build_server(
             "notes (`[[" + rel.rsplit("/", 1)[-1].removesuffix(".md") + "]]`)."
         )
 
-    @mcp.tool(annotations={"destructiveHint": False})
+    @tool(annotations={"destructiveHint": False})
     async def edit_note(path: str, old: str, new: str) -> str:
         """Replace one exact passage of a note, then commit and push.
         `old` must appear exactly once in the note; include surrounding lines if needed."""

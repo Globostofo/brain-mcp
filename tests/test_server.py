@@ -19,8 +19,10 @@ def server(origin: Path, tmp_path: Path):
 @pytest.mark.anyio
 async def test_tools_end_to_end(server, origin: Path) -> None:
     async with Client(server) as client:
-        names = {t.name for t in await client.list_tools()}
-        assert names == {"list", "search", "read_note", "write_note", "edit_note"}
+        tools = await client.list_tools()
+        assert {t.name for t in tools} == {"list", "search", "read_note", "write_note", "edit_note"}
+        # claude.ai ignores the server instructions: every tool points to the index
+        assert all("read the note `_index` first" in t.description for t in tools)
 
         listing = await client.call_tool("list", {})
         assert listing.data == "_index.md\nprojects/demo/demo.md"
