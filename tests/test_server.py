@@ -20,7 +20,9 @@ def server(origin: Path, tmp_path: Path):
 async def test_tools_end_to_end(server, origin: Path) -> None:
     async with Client(server) as client:
         tools = await client.list_tools()
-        assert {t.name for t in tools} == {"list", "search", "read_note", "write_note", "edit_note"}
+        assert {t.name for t in tools} == {
+            "list", "search", "read_note", "write_note", "edit_note", "delete_note"
+        }
         # claude.ai ignores the server instructions: every tool points to the index
         assert all("read the note `_index` first" in t.description for t in tools)
 
@@ -38,6 +40,12 @@ async def test_tools_end_to_end(server, origin: Path) -> None:
         assert "`_index.md`" in created.data and "[[new]]" in created.data
         replaced = await client.call_tool("write_note", {"path": "setup/new.md", "content": "y\n"})
         assert replaced.data == "Saved setup/new.md"
+
+        deleted = await client.call_tool("delete_note", {"path": "new"})
+        assert deleted.data == "Deleted setup/new.md"
+        deleted = await client.call_tool("delete_note", {"path": "demo"})
+        assert deleted.data.startswith("Deleted projects/demo/demo.md. These notes")
+        assert deleted.data.endswith(": _index.md")
 
         with pytest.raises(ToolError, match="Hidden paths"):
             await client.call_tool("read_note", {"path": ".sync/CLAUDE.md"})

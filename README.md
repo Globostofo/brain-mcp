@@ -3,7 +3,7 @@
 Remote MCP server exposing the brain vault (`Globostofo/brain`) to claude.ai (web, desktop, mobile) as a custom connector.
 
 - Works on its own clone of the repository: pulls before reads (at most every 30 s) and before writes, commits `sync: heracles <date>` and pushes after each write.
-- Tools: `list`, `search`, `read_note`, `write_note`, `edit_note`. No deletion or move. Hidden directories (`.git/`, `.sync/`, …) are neither readable nor writable, and only `.md` files can be written.
+- Tools: `list`, `search`, `read_note`, `write_note`, `edit_note`, `delete_note` (a deleted note can be restored from the git history; `_index.md` cannot be deleted). No move. Hidden directories (`.git/`, `.sync/`, …) are neither readable nor writable, and only `.md` files can be written or deleted.
 - Auth: the server is its own OAuth authorization server for claude.ai (dynamic client registration, same domain as the MCP endpoint) and delegates the actual login to the SSO (`auth.globostofo.net`) through a pre-registered OIDC client. Access is isolated from the games: dedicated SSO account, login flow and signing key, plus a username check in the server.
 - Publicly exposed on `brain.globostofo.net`: an exception to the VPN-only rule, since claude.ai's servers are the ones calling the connector.
 

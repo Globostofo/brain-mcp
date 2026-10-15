@@ -194,3 +194,24 @@ class Vault:
             rel = self._rel(path)
             self._commit_and_push(rel)
             return rel
+
+    def delete(self, name: str) -> tuple[str, list[str]]:
+        """Returns the deleted note path and the notes that still link to it."""
+        with self._lock:
+            self._pull()
+            path = self._note_path(name)
+            if path.suffix != ".md" or not path.is_file():
+                raise VaultError(f"No such note: {name}")
+            rel = self._rel(path)
+            if rel == "_index.md":
+                raise VaultError("The index cannot be deleted")
+            path.unlink()
+            self._commit_and_push(rel)
+            stem = path.stem
+            links = (f"[[{stem}]]", f"[[{stem}|", f"[[{stem}#")
+            backlinks = [
+                self._rel(p)
+                for p in self._markdown_files(self.root)
+                if any(link in p.read_text(encoding="utf-8") for link in links)
+            ]
+            return rel, backlinks

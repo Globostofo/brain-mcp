@@ -30,7 +30,7 @@ Markdown notes versioned with git and shared with Claude Code on his PCs.
   `_index.md` in sync. Where each kind of note goes is defined in
   `reference/propose-notes.md`; new notes start from `_templates/`.
 - Prefer `edit_note` for small changes; use `write_note` only for new notes or full
-  rewrites. Every write is committed and pushed immediately.
+  rewrites. Every write or deletion is committed and pushed immediately.
 """
 
 
@@ -144,6 +144,18 @@ def build_server(
         """Replace one exact passage of a note, then commit and push.
         `old` must appear exactly once in the note; include surrounding lines if needed."""
         return f"Edited {await call(vault.edit, path, old, new)}"
+
+    @tool(annotations={"destructiveHint": True})
+    async def delete_note(path: str) -> str:
+        """Delete a note by relative path or by note name, then commit and push.
+        It can be restored from the git history."""
+        rel, backlinks = await call(vault.delete, path)
+        if not backlinks:
+            return f"Deleted {rel}"
+        return (
+            f"Deleted {rel}. These notes still link to it; update or remove the links "
+            "(with `edit_note`): " + ", ".join(backlinks)
+        )
 
     return mcp
 

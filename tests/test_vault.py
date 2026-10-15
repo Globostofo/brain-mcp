@@ -83,3 +83,23 @@ def test_conflict_leaves_clone_clean(vault: Vault, other: Path, origin: Path) ->
     assert git(vault.root, "status", "--porcelain") == ""
     assert (vault.root / "_index.md").read_text() == "changed on the PC\n"
     assert origin_file(origin, "_index.md") == "changed on the PC\n"
+
+
+def test_delete_commits_and_reports_backlinks(vault: Vault, origin: Path) -> None:
+    vault.write("setup/old.md", "# Old\n")
+    vault.write("setup/linker.md", "See [[old|the old note]]\n")
+    assert vault.delete("[[old]]") == ("setup/old.md", ["setup/linker.md"])
+    assert "setup/old.md" not in git(origin, "ls-tree", "-r", "--name-only", "main")
+    assert git(origin, "log", "-1", "--format=%s", "main").startswith("sync: heracles ")
+    with pytest.raises(VaultError, match="No such note"):
+        vault.delete("old")
+
+
+def test_delete_refuses_index_and_protected_paths(vault: Vault) -> None:
+    with pytest.raises(VaultError, match="index"):
+        vault.delete("_index")
+    for path in ("notes.txt", ".sync/CLAUDE.md", "../outside.md"):
+        with pytest.raises(VaultError):
+            vault.delete(path)
+    assert (vault.root / "notes.txt").exists()
+    assert (vault.root / ".sync" / "CLAUDE.md").exists()
