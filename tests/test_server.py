@@ -4,8 +4,8 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from heracles_brain.server import build_server
-from heracles_brain.vault import Vault
+from brain_mcp.server import build_server
+from brain_mcp.vault import Vault
 
 from conftest import clone, origin_file
 

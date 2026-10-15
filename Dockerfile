@@ -25,4 +25,4 @@ ENV TZ=Europe/Paris \
     GIT_SSH_COMMAND="ssh -i /run/secrets/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
 
 EXPOSE 8000
-CMD ["heracles-brain"]
+CMD ["brain-mcp"]

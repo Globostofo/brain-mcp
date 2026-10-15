@@ -1,5 +1,5 @@
 [project]
-name = "heracles-brain"
+name = "brain-mcp"
 version = "0.1.0"
 description = "Remote MCP server exposing the brain vault to claude.ai"
 requires-python = ">=3.12"
@@ -9,7 +9,7 @@ dependencies = ["fastmcp>=4.0,<5"]
 dev = ["pytest"]
 
 [project.scripts]
-heracles-brain = "heracles_brain.server:main"
+brain-mcp = "brain_mcp.server:main"
 
 [build-system]
 requires = ["setuptools>=69"]

@@ -14,7 +14,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
 
-from heracles_brain.vault import Vault, VaultError
+from brain_mcp.vault import Vault, VaultError
 
 INSTRUCTIONS = """\
 This server gives access to Romain's brain: his central knowledge base, a folder of

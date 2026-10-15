@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from conftest import git, origin_file
-from heracles_brain.vault import Vault, VaultError
+from brain_mcp.vault import Vault, VaultError
 
 
 def test_list_skips_hidden_and_non_markdown(vault: Vault) -> None:

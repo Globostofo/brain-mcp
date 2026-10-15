@@ -1,4 +1,4 @@
-# heracles-brain
+# brain-mcp
 
 Remote MCP server exposing the brain vault (`Globostofo/brain`) to claude.ai (web, desktop, mobile) as a custom connector.
 
@@ -20,10 +20,10 @@ Remote MCP server exposing the brain vault (`Globostofo/brain`) to claude.ai (we
 **[prod — RPi]** Clone the repo and create an SSH key with write access to the notes repository:
 
 ```bash
-git clone git@github.com:Globostofo/heracles-brain.git ~/heracles-brain
-cd ~/heracles-brain
+git clone git@github.com:Globostofo/brain-mcp.git ~/brain-mcp
+cd ~/brain-mcp
 
-ssh-keygen -t ed25519 -f deploy_key -N "" -C heracles-brain
+ssh-keygen -t ed25519 -f deploy_key -N "" -C brain-mcp
 # The container runs as uid 1000
 sudo chown 1000:1000 deploy_key && chmod 600 deploy_key
 cat deploy_key.pub
@@ -32,7 +32,7 @@ cat deploy_key.pub
 **[dev]** Register the public key on the notes repository, with write access:
 
 ```bash
-gh repo deploy-key add deploy_key.pub --repo Globostofo/brain --allow-write --title heracles-brain
+gh repo deploy-key add deploy_key.pub --repo Globostofo/brain --allow-write --title brain-mcp
 ```
 
 (or paste it in GitHub → `Globostofo/brain` → Settings → Deploy keys → Add, tick "Allow write access").
@@ -155,7 +155,7 @@ Run locally without auth, on a throwaway clone (refused when `BASE_URL` is https
 ```bash
 git clone -q --bare ~/brain /tmp/brain-origin.git
 BRAIN_NO_AUTH=1 BASE_URL=http://localhost:8000 BRAIN_DIR=/tmp/brain-test \
-  BRAIN_REPO=/tmp/brain-origin.git .venv/bin/heracles-brain
+  BRAIN_REPO=/tmp/brain-origin.git .venv/bin/brain-mcp
 
 npx @modelcontextprotocol/inspector   # connect to http://localhost:8000/mcp
 ```

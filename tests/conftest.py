@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from heracles_brain.vault import Vault
+from brain_mcp.vault import Vault
 
 
 def git(cwd: Path, *args: str) -> str:
