@@ -157,6 +157,15 @@ def build_server(
             "(with `edit_note`): " + ", ".join(backlinks)
         )
 
+    @tool(annotations={"destructiveHint": False})
+    async def move_note(path: str, dest: str) -> str:
+        """Move or rename a note, then commit and push. `dest` is a relative path ending
+        in .md, or a directory. On a rename, [[links]] to the note are rewritten everywhere."""
+        rel, rewritten = await call(vault.move, path, dest)
+        if not rewritten:
+            return f"Moved to {rel}"
+        return f"Moved to {rel}. Links rewritten in: " + ", ".join(rewritten)
+
     return mcp
 
 

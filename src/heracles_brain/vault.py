@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -60,8 +61,9 @@ class Vault:
         if time.monotonic() - self._last_pull >= self.pull_interval:
             self._pull()
 
-    def _commit_and_push(self, rel: str) -> None:
-        self._git("add", "--", rel)
+    def _commit_and_push(self, *rels: str) -> None:
+        rel = ", ".join(rels)
+        self._git("add", "--", *rels)
         if not self._git("diff", "--cached", "--quiet", check=False).returncode:
             return  # content unchanged, nothing to commit
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -215,3 +217,44 @@ class Vault:
                 if any(link in p.read_text(encoding="utf-8") for link in links)
             ]
             return rel, backlinks
+
+    def move(self, name: str, dest: str) -> tuple[str, list[str]]:
+        """Move or rename a note. On a rename, [[links]] to it are rewritten in every note.
+        Returns the new note path and the notes whose links were rewritten."""
+        with self._lock:
+            self._pull()
+            src = self._note_path(name)
+            if src.suffix != ".md" or not src.is_file():
+                raise VaultError(f"No such note: {name}")
+            old_rel = self._rel(src)
+            if old_rel == "_index.md":
+                raise VaultError("The index cannot be moved")
+            target = self._resolve(dest)
+            if target.is_dir() or dest.strip().endswith("/"):
+                target = target / src.name
+            if target.suffix != ".md":
+                raise VaultError("The destination must end in .md")
+            if target.exists():
+                raise VaultError(f"The destination already exists: {self._rel(target)}")
+            homonyms = [
+                p for p in self._markdown_files(self.root) if p.name == target.name and p != src
+            ]
+            if homonyms:
+                raise VaultError(
+                    f"Another note is already named {target.stem} "
+                    f"({self._rel(homonyms[0])}); [[links]] would become ambiguous"
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(target)
+            rewritten = []
+            if target.stem != src.stem:
+                link = re.compile(r"\[\[" + re.escape(src.stem) + r"(?=[\]|#])")
+                for path in self._markdown_files(self.root):
+                    content = path.read_text(encoding="utf-8")
+                    updated = link.sub(lambda _: f"[[{target.stem}", content)
+                    if updated != content:
+                        path.write_text(updated, encoding="utf-8")
+                        rewritten.append(self._rel(path))
+            new_rel = self._rel(target)
+            self._commit_and_push(old_rel, new_rel, *rewritten)
+            return new_rel, rewritten

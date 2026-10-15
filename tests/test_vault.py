@@ -103,3 +103,39 @@ def test_delete_refuses_index_and_protected_paths(vault: Vault) -> None:
             vault.delete(path)
     assert (vault.root / "notes.txt").exists()
     assert (vault.root / ".sync" / "CLAUDE.md").exists()
+
+
+def test_move_to_directory_keeps_links(vault: Vault, origin: Path) -> None:
+    assert vault.move("demo", "archive/") == ("archive/demo.md", [])
+    files = git(origin, "ls-tree", "-r", "--name-only", "main")
+    assert "archive/demo.md" in files and "projects/demo/demo.md" not in files
+    assert origin_file(origin, "_index.md") == "# Brain\n\n- [[demo]]\n"
+
+
+def test_rename_rewrites_links(vault: Vault, origin: Path) -> None:
+    vault.write("setup/linker.md", "[[demo|the demo]], [[demo#Stack]], [[demolition]]\n")
+    new, rewritten = vault.move("[[demo]]", "projects/demo/showcase.md")
+    assert new == "projects/demo/showcase.md"
+    assert rewritten == ["_index.md", "setup/linker.md"]
+    assert origin_file(origin, "_index.md") == "# Brain\n\n- [[showcase]]\n"
+    assert origin_file(origin, "setup/linker.md") == (
+        "[[showcase|the demo]], [[showcase#Stack]], [[demolition]]\n"
+    )
+    assert len(git(origin, "log", "--format=%s", "main").splitlines()) == 3  # one commit
+
+
+def test_move_refusals(vault: Vault) -> None:
+    vault.write("setup/other.md", "x\n")
+    vault.write("archive/demo.md", "y\n")
+    for name, dest, error in [
+        ("_index", "setup/index.md", "index"),
+        ("missing", "setup/x.md", "No such note"),
+        ("[[other]]", "_index.md", "already exists"),
+        ("setup/other.md", "projects/demo/demo.md", "already exists"),
+        ("setup/other.md", "notes/demo.md", "ambiguous"),
+        ("setup/other.md", "setup/other.txt", "end in .md"),
+        ("setup/other.md", ".sync/other.md", "Hidden"),
+    ]:
+        with pytest.raises(VaultError, match=error):
+            vault.move(name, dest)
+    assert git(vault.root, "status", "--porcelain") == ""
