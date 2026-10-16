@@ -20,8 +20,8 @@ Remote MCP server exposing the brain vault (`Globostofo/brain`) to claude.ai (we
 **[prod — RPi]** Clone the repo and create an SSH key with write access to the notes repository:
 
 ```bash
-git clone git@github.com:Globostofo/brain-mcp.git ~/brain-mcp
-cd ~/brain-mcp
+git clone git@github.com:Globostofo/brain-mcp.git ~/deployment/brain-mcp
+cd ~/deployment/brain-mcp
 
 ssh-keygen -t ed25519 -f deploy_key -N "" -C brain-mcp
 # The container runs as uid 1000
