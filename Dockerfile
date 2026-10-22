@@ -18,9 +18,8 @@ RUN useradd --uid 1000 --create-home brain \
     && chown -R brain:brain /data
 USER brain
 
-# Same local time as the PCs, so that "sync: <host> <date>" commits read consistently
-ENV TZ=Europe/Paris \
-    BRAIN_DIR=/data/brain \
+# Set TZ (e.g. Europe/Paris) at runtime: it dates the "sync: <host> <date>" commits
+ENV BRAIN_DIR=/data/brain \
     FASTMCP_HOME=/data/oauth \
     GIT_SSH_COMMAND="ssh -i /run/secrets/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
 

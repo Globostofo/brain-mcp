@@ -1,4 +1,4 @@
-"""Remote MCP server exposing the brain vault to claude.ai."""
+"""Remote MCP server exposing a git-backed Markdown notes vault to AI agents."""
 
 from __future__ import annotations
 
@@ -17,29 +17,27 @@ from fastmcp.server.dependencies import get_access_token
 from brain_mcp.vault import Vault, VaultError
 
 INSTRUCTIONS = """\
-This server gives access to Romain's brain: his central knowledge base, a folder of
-Markdown notes versioned with git and shared with Claude Code on his PCs.
+This server gives access to a knowledge base: a folder of Markdown notes versioned with git,
+linked with `[[wiki-links]]` (by note name, not path) and shared with other tools that edit
+the same repository.
 
-- At the start of any substantive task, read `_index.md`, then `todo.md`, and follow the
-  links relevant to the task (profile, environment, `reference/` rules, the matching
-  `projects/` note).
-- Rules in `reference/` apply to every project.
-- Notes are written in French and linked with `[[wiki-links]]` (by note name, not path).
-  `read_note` accepts a bare note name.
-- When you learn something durable, update or create the relevant note and keep
-  `_index.md` in sync. Where each kind of note goes is defined in
-  `reference/propose-notes.md`; new notes start from `_templates/`.
+- `read_note` accepts a relative path or a bare note name, as used in `[[wiki-links]]`.
 - Prefer `edit_note` for small changes; use `write_note` only for new notes or full
-  rewrites. Every write or deletion is committed and pushed immediately.
+  rewrites. Every write, move or deletion is committed and pushed immediately, and can be
+  reverted from the git history.
 """
 
-
 UPSTREAM_SCOPES = "openid profile email offline_access"
-# claude.ai does not show the server instructions to the model, only tool descriptions
-INDEX_FIRST = (
-    "At the start of a task, read the note `_index` first (`read_note(\"_index\")`): it "
-    "explains how the brain is organized and links to the todo and to the rules to follow."
-)
+
+
+def index_first(index: str) -> str:
+    """Hint appended to every tool description: some MCP clients do not show the server
+    instructions to the model, only tool descriptions."""
+    name = index.removesuffix(".md")
+    return (
+        f"At the start of a task, read the note `{name}` first (`read_note(\"{name}\")`): it "
+        "explains how the notes are organized and links to the rules to follow."
+    )
 
 
 def env(name: str, default: str | None = None) -> str:
@@ -56,6 +54,12 @@ def ensure_clone(root: Path) -> None:
     subprocess.run(["git", "clone", "-q", env("BRAIN_REPO"), str(root)], check=True)
 
 
+def env_list(name: str) -> list[str] | None:
+    value = os.environ.get(name, "")
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or None
+
+
 def build_auth(base_url: str):
     if os.environ.get("BRAIN_NO_AUTH") == "1":
         if urlparse(base_url).scheme == "https":
@@ -70,13 +74,11 @@ def build_auth(base_url: str):
         client_secret=env("OIDC_CLIENT_SECRET"),
         base_url=base_url,
         jwt_signing_key=env("JWT_SIGNING_KEY"),
-        # claude.ai requests no scope; without offline_access the SSO issues no refresh
-        # token and the connector is logged out when the access token expires
+        # Some MCP clients request no scope; without offline_access the identity provider
+        # issues no refresh token and the client is logged out when the access token expires
         extra_authorize_params={"scope": UPSTREAM_SCOPES},
-        allowed_client_redirect_uris=[
-            "https://claude.ai/api/mcp/auth_callback",
-            "https://claude.com/api/mcp/auth_callback",
-        ],
+        # None: any MCP client may register (access is still limited to ALLOWED_USERNAME)
+        allowed_client_redirect_uris=env_list("ALLOWED_REDIRECT_URIS"),
     )
 
 
@@ -86,24 +88,33 @@ def token_username() -> str | None:
 
 
 def build_server(
-    vault: Vault, auth=None, allowed_user: str | None = None, current_user=token_username
+    vault: Vault,
+    auth=None,
+    allowed_user: str | None = None,
+    current_user=token_username,
+    extra_instructions: str | None = None,
 ) -> FastMCP:
-    """`allowed_user` is checked on every call, on top of the SSO policy binding,
-    so that a missing binding cannot open the brain to other SSO accounts."""
-    mcp = FastMCP(name="brain", instructions=INSTRUCTIONS, auth=auth)
+    """`allowed_user` is checked on every call, on top of the identity provider's own
+    access rules, so that a misconfigured provider cannot open the notes to other accounts.
+    `extra_instructions` (the deployment's own conventions) are appended to the server
+    instructions; tool descriptions only point to the index note, when there is one."""
+    extra = extra_instructions.strip() if extra_instructions else ""
+    instructions = f"{INSTRUCTIONS}\n{extra}\n" if extra else INSTRUCTIONS
+    mcp = FastMCP(name="brain", instructions=instructions, auth=auth)
+    hint = index_first(vault.index_note) if vault.index_note else ""
 
     def tool(name: str | None = None, annotations: dict | None = None):
-        """Register a tool whose description is its docstring followed by INDEX_FIRST."""
+        """Register a tool whose description is its docstring followed by the index hint."""
 
         def register(fn):
-            description = f"{inspect.getdoc(fn)}\n\n{INDEX_FIRST}"
+            description = "\n\n".join(part for part in (inspect.getdoc(fn), hint) if part)
             return mcp.tool(name=name, annotations=annotations, description=description)(fn)
 
         return register
 
     async def call(fn, *args):
         if allowed_user is not None and current_user() != allowed_user:
-            raise ToolError("Access denied: this account is not allowed to use the brain")
+            raise ToolError("Access denied: this account is not allowed to use these notes")
         try:
             return await to_thread.run_sync(fn, *args)
         except VaultError as e:
@@ -111,7 +122,7 @@ def build_server(
 
     @tool(name="list", annotations={"readOnlyHint": True})
     async def list_notes(dir: str = "") -> str:
-        """List the Markdown notes of the brain, optionally under a directory (e.g. "projects")."""
+        """List the Markdown notes, optionally under a directory (e.g. "projects")."""
         return "\n".join(await call(vault.list, dir))
 
     @tool(annotations={"readOnlyHint": True})
@@ -129,14 +140,17 @@ def build_server(
     @tool(annotations={"destructiveHint": True})
     async def write_note(path: str, content: str) -> str:
         """Create a note or replace its whole content, then commit and push.
-        Path is relative to the brain root and must end in .md."""
+        Path is relative to the vault root and must end in .md."""
         rel, created = await call(vault.write, path, content)
         if not created:
             return f"Saved {rel}"
+        link = "[[" + rel.rsplit("/", 1)[-1].removesuffix(".md") + "]]"
+        if not vault.index_note:
+            return f"Created {rel}. Reminder: link it from related notes (`{link}`)."
         return (
             f"Created {rel}. Reminder: this is a new note. If it matters, add it to the "
-            "matching section of `_index.md` (with `edit_note`), and link it from related "
-            "notes (`[[" + rel.rsplit("/", 1)[-1].removesuffix(".md") + "]]`)."
+            f"matching section of `{vault.index_note}` (with `edit_note`), and link it from "
+            f"related notes (`{link}`)."
         )
 
     @tool(annotations={"destructiveHint": False})
@@ -173,10 +187,14 @@ def main() -> None:
     base_url = env("BASE_URL")
     root = Path(env("BRAIN_DIR", "/data/brain"))
     ensure_clone(root)
-    vault = Vault(root, host_label=env("SYNC_HOST_LABEL", "heracles"))
+    vault = Vault(
+        root,
+        host_label=env("SYNC_HOST_LABEL", "brain-mcp"),
+        index_note=os.environ.get("INDEX_NOTE") or None,
+    )
     auth = build_auth(base_url)
     allowed_user = env("ALLOWED_USERNAME") if auth else None
-    mcp = build_server(vault, auth, allowed_user)
+    mcp = build_server(vault, auth, allowed_user, extra_instructions=env("BRAIN_INSTRUCTIONS", ""))
     mcp.run(
         transport="http",
         host="0.0.0.0",

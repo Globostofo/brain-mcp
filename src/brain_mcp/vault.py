@@ -1,4 +1,4 @@
-"""File and git operations on the brain vault clone."""
+"""File and git operations on the notes vault clone."""
 
 from __future__ import annotations
 
@@ -26,11 +26,15 @@ class Vault:
     branch: str = "main"
     host_label: str = field(default_factory=socket.gethostname)
     pull_interval: float = PULL_INTERVAL_SECONDS
+    # Note that can be neither deleted nor moved, and that tools point to (e.g. "_index.md")
+    index_note: str | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _last_pull: float = field(default=0.0, repr=False)
 
     def __post_init__(self) -> None:
         self.root = self.root.resolve()
+        if self.index_note and not self.index_note.endswith(".md"):
+            self.index_note += ".md"
 
     # ---------- git ----------
 
@@ -205,7 +209,7 @@ class Vault:
             if path.suffix != ".md" or not path.is_file():
                 raise VaultError(f"No such note: {name}")
             rel = self._rel(path)
-            if rel == "_index.md":
+            if rel == self.index_note:
                 raise VaultError("The index cannot be deleted")
             path.unlink()
             self._commit_and_push(rel)
@@ -227,7 +231,7 @@ class Vault:
             if src.suffix != ".md" or not src.is_file():
                 raise VaultError(f"No such note: {name}")
             old_rel = self._rel(src)
-            if old_rel == "_index.md":
+            if old_rel == self.index_note:
                 raise VaultError("The index cannot be moved")
             target = self._resolve(dest)
             if target.is_dir() or dest.strip().endswith("/"):

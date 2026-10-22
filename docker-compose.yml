@@ -1,28 +1,17 @@
 services:
-  brain:
+  brain-mcp:
     build: .
+    restart: unless-stopped
     env_file:
       - .env
     volumes:
       - vault:/data/brain
       - oauth:/data/oauth
       - ./deploy_key:/run/secrets/deploy_key:ro
-    networks:
-      - heracles
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.brain.rule=Host(`brain.globostofo.net`)"
-      - "traefik.http.routers.brain.entrypoints=websecure"
-      - "traefik.http.routers.brain.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.brain.tls.domains[0].main=globostofo.net"
-      - "traefik.http.routers.brain.tls.domains[0].sans=*.globostofo.net"
-      - "traefik.http.routers.brain.middlewares=secure-headers@file"
-      - "traefik.http.services.brain.loadbalancer.server.port=8000"
+    # Put an HTTPS reverse proxy in front of this port, serving BASE_URL
+    ports:
+      - "127.0.0.1:${PORT:-8000}:8000"
 
 volumes:
   vault:
   oauth:
-
-networks:
-  heracles:
-    external: true

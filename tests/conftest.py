@@ -26,9 +26,9 @@ def origin(tmp_path: Path) -> Path:
     seed = clone(origin, tmp_path / "seed")
     (seed / "projects" / "demo").mkdir(parents=True)
     (seed / "_index.md").write_text("# Brain\n\n- [[demo]]\n")
-    (seed / "projects" / "demo" / "demo.md").write_text("Demo project\nUses Traefik\n")
+    (seed / "projects" / "demo" / "demo.md").write_text("Demo project\nUses Nginx\n")
     (seed / ".sync").mkdir()
-    (seed / ".sync" / "CLAUDE.md").write_text("secret config\n")
+    (seed / ".sync" / "config.md").write_text("secret config\n")
     (seed / "notes.txt").write_text("not markdown\n")
     git(seed, "add", "-A")
     git(seed, "commit", "-q", "-m", "seed")
@@ -38,7 +38,7 @@ def origin(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def vault(origin: Path, tmp_path: Path) -> Vault:
-    return Vault(clone(origin, tmp_path / "vault"), host_label="heracles", pull_interval=0)
+    return Vault(clone(origin, tmp_path / "vault"), host_label="test-host", pull_interval=0, index_note="_index")
 
 
 @pytest.fixture

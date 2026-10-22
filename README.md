@@ -1,146 +1,167 @@
 # brain-mcp
 
-Remote MCP server exposing the brain vault (`Globostofo/brain`) to claude.ai (web, desktop, mobile) as a custom connector.
+A remote [MCP](https://modelcontextprotocol.io) server that gives an AI agent read and write
+access to a "second brain": a folder of Markdown notes linked with `[[wiki-links]]`
+(Obsidian-style), versioned in a git repository.
 
-- Works on its own clone of the repository: pulls before reads (at most every 30 s) and before writes, commits `sync: heracles <date>` and pushes after each write.
-- Tools: `list`, `search`, `read_note`, `write_note`, `edit_note`, `delete_note` (a deleted note can be restored from the git history), `move_note` (on a rename, `[[links]]` to the note are rewritten in every note, in the same commit). `_index.md` can be neither deleted nor moved. Hidden directories (`.git/`, `.sync/`, …) are neither readable nor writable, and only `.md` files can be written or deleted.
-- Auth: the server is its own OAuth authorization server for claude.ai (dynamic client registration, same domain as the MCP endpoint) and delegates the actual login to the SSO (`auth.globostofo.net`) through a pre-registered OIDC client. Access is isolated from the games: dedicated SSO account, login flow and signing key, plus a username check in the server.
-- Publicly exposed on `brain.globostofo.net`: an exception to the VPN-only rule, since claude.ai's servers are the ones calling the connector.
+The same repository stays shared with the other places the notes are edited (PCs, coding agents,
+an Obsidian vault): the server works on its own clone, pulls before it reads and commits and pushes
+every change right away. Notes can then be read and maintained from any MCP client, including
+mobile ones.
 
-## Prerequisites
+## What it looks like
 
-- Docker + Docker Compose
-- `heracles` Docker network (created by heracles-proxy)
-- heracles-proxy and heracles-auth running
+| Request | What the agent does |
+|---------|---------------------|
+| "What's left to do on the website project?" | `read_note("website")`, follows the links it needs |
+| "Where did I write how the backups work?" | `search("backup")` |
+| "Note that we chose Postgres, and why" | `edit_note` on the project note: one passage replaced, committed and pushed |
+| "Rename the note `setup-pi` to `raspberry-pi`" | `move_note`: the file is renamed and every `[[setup-pi]]` link is rewritten, in one commit |
+| "Delete the draft" | `delete_note`, then reports the notes that still link to it |
 
-## Setup
+## Tools
 
-### 1. Deploy key
+- **Read**: `list` (notes, optionally under a directory), `search` (case-insensitive, in contents
+  and file names), `read_note` (by relative path or by note name, as in a `[[wiki-link]]`).
+- **Write**: `write_note` (create or replace), `edit_note` (replace one exact passage),
+  `move_note` (move or rename, rewriting links), `delete_note`.
 
-**[prod — RPi]** Clone the repo and create an SSH key with write access to the notes repository:
+Every tool carries MCP annotations (read-only or destructive), so clients can ask for confirmation
+before destructive calls.
 
-```bash
-git clone git@github.com:Globostofo/brain-mcp.git ~/deployment/brain-mcp
-cd ~/deployment/brain-mcp
+## Architecture
 
-ssh-keygen -t ed25519 -f deploy_key -N "" -C brain-mcp
-# The container runs as uid 1000
-sudo chown 1000:1000 deploy_key && chmod 600 deploy_key
-cat deploy_key.pub
+```mermaid
+flowchart LR
+    client["MCP client<br>(AI agent)"] -- "OAuth 2.1 + MCP<br>(streamable HTTP)" --> server
+    subgraph server["brain-mcp"]
+        oauth["OAuth server<br>(proxy to OIDC)"]
+        tools["MCP tools"]
+        clone[("git clone<br>of the notes")]
+        tools --> clone
+    end
+    oauth -- "OIDC login" --> idp["Identity provider"]
+    clone -- "pull / push<br>(SSH deploy key)" --> repo["Notes repository"]
+    repo -- "pull / push" --> others["Other machines<br>and editors"]
 ```
 
-**[dev]** Register the public key on the notes repository, with write access:
+- The server is its own OAuth authorization server for MCP clients (dynamic client registration,
+  same origin as the MCP endpoint, as the MCP spec requires) and delegates the actual login to any
+  OpenID Connect provider. Only one account (`ALLOWED_USERNAME`) may use the tools.
+- The notes repository is reached over SSH with a deploy key restricted to that repository.
 
-```bash
-gh repo deploy-key add deploy_key.pub --repo Globostofo/brain --allow-write --title brain-mcp
-```
+Code layout (`src/brain_mcp/`):
 
-(or paste it in GitHub → `Globostofo/brain` → Settings → Deploy keys → Add, tick "Allow write access").
+| Module | Role |
+|--------|------|
+| `vault.py` | File and git operations on the clone: path checks, note name resolution, search, link rewriting, pull / commit / push |
+| `server.py` | MCP tools, their descriptions and annotations, auth and configuration |
 
-### 2. Isolated access in the SSO
+## Design notes
 
-Goal: players cannot reach the brain, and the brain account cannot reach the games. The SSO has a single user directory shared by all apps, so the isolation relies on a dedicated account, flow, signing key and bindings.
+- **Git is the sync and the safety net.** Reads pull at most every 30 s, writes always pull first,
+  then commit `sync: <host> <date>` and push. If the push is rejected because another machine
+  pushed in between, the commit is rebased and pushed again; on a real conflict the change is
+  dropped, the clone is reset to the remote and the agent is told to read the note again. Any
+  write, move or deletion can be reverted from the history.
+- **Edits, not rewrites.** `edit_note` replaces one passage that must appear exactly once, which
+  costs far fewer tokens than resending a whole note and cannot silently overwrite the rest of it.
+- **No broken links.** A rename rewrites every `[[link]]` to the note in the same commit, and is
+  refused when the new name is already used elsewhere (links would become ambiguous). A deletion
+  reports the notes that still link to the deleted one.
+- **Note names, as in links.** `read_note`, `edit_note`, `move_note` and `delete_note` accept a
+  bare note name (`[[name]]`, `name|alias` and `name#heading` forms included) and resolve it
+  anywhere in the vault, refusing ambiguous names.
+- **Narrow file access.** Paths are confined to the vault, hidden directories (`.git/`, `.obsidian/`,
+  any dot-folder holding tool configuration) are neither readable nor writable, and only `.md`
+  files can be written, moved or deleted.
+- **An optional index note.** With `INDEX_NOTE`, the index can be neither deleted nor moved, every
+  tool description asks the model to read it first, and creating a note reminds the agent to list
+  it there. Some MCP clients pass tool descriptions to the model but not the server instructions,
+  so this one line is repeated in every tool; the deployment's own conventions
+  (`BRAIN_INSTRUCTIONS`) only go into the server instructions, to keep tool descriptions short.
 
-The account, group and login flow are named `assistant`: they are shared by all of Romain's assistant connectors (e.g. pantry-mcp). The provider, application and signing key stay specific to the brain. Steps 1 and 2 are only done once, for the first connector.
+## Configuration
 
-**[dev — browser, via VPN]** In the admin panel (`http://192.168.1.123:9000/if/admin/`; it is blocked on `auth.globostofo.net`, see the heracles-auth README):
+Environment variables (see `.env.example`):
 
-1. **Group and account**
-   - Directory → Groups → Create: `assistant`.
-   - Directory → Users → Create: username **`assistant`** (must match `ALLOWED_USERNAME`), type **Internal**, not superuser. Add it to the `assistant` group, then set a strong password (user → Set password).
-2. **Dedicated login flow**: Flows and Stages → Flows → Create
-   - Name/slug: `assistant-authentication`, designation **Authentication**, behavior setting Authentication: **No requirement** (any other value denies the flow when opened directly), no policy bound to the flow itself.
-   - Stage bindings, in order:
-     - 10 — new Identification stage `assistant-identification`: user fields **Username** only, **no sources** (no Google/Discord buttons), no enrollment/recovery flow.
-     - 15 — new Deny stage `assistant-deny`, binding with **Evaluate when flow is planned unchecked** and **Evaluate when stage is run checked**, and bound to a new Expression Policy `assistant-not-member`:
-       ```python
-       user = request.context.get("pending_user")
-       return not (user and ak_is_group_member(user, name="assistant"))
-       ```
-       Any account outside the `assistant` group (e.g. a player with a local password) is denied right after its username, before the password. Do not bind this policy to the password stage instead: a stage whose policy fails is skipped, not denied.
-     - 20 — new Password stage `assistant-password`.
-     - 30 — new Authenticator Validation stage `assistant-mfa`: device classes **TOTP only**, "Not configured action": **Force the user to configure an authenticator**, configuration stage: `assistant-totp-setup` (a TOTP Authenticator Setup stage created beforehand in Flows and Stages → Stages, 6 digits, not bound to any flow), last validation threshold `seconds=0`.
-     - 40 — new User Login stage `assistant-login`: session duration `seconds=0`, stay signed in offset `seconds=0` (a dedicated stage, so that tuning the default one for players never affects the assistant connectors).
-3. **Signing key**: System → Certificates → Generate: common name `brain-signing`, validity `3650` days, private key algorithm **RSA** (the server verifies RS256 by default; an ECDSA key would fail). Tokens of the brain are not signed with the games' key.
-4. **Provider**: Applications → Providers → Create → OAuth2/OpenID Provider
-   - Name: `brain`
-   - Authentication flow: **`assistant-authentication`**
-   - Authorization flow: `default-provider-authorization-explicit-consent`
-   - Client type: **Confidential**
-   - Redirect URIs: Strict, `https://brain.globostofo.net/auth/callback`
-   - Signing key: **`brain-signing`**; Encryption key: empty (encrypted tokens could not be verified by the server)
-   - Scopes (Advanced protocol settings): `openid`, `email`, `profile` **and `offline_access`** (without it the SSO issues no refresh token, and claude.ai is logged out when the access token expires, after 5 minutes by default)
-   - Refresh token validity (optional): e.g. `days=90`, otherwise claude.ai asks to log in again after 30 days
-   - Note the Client ID and Client Secret.
-5. **Application**: Applications → Applications → Create, name `brain`, slug **`brain`** (part of `OIDC_CONFIG_URL`), provider `brain`. Then Policy / Group / User Bindings → Bind existing → Group → **`assistant`**.
-   An application without any binding is open to every SSO user: this binding is what keeps players out. The server also checks `ALLOWED_USERNAME` on every call, in case the binding is ever removed.
-6. *(Optional, skipped in the current setup)* **Keep the assistant account out of the games** — without it, the `assistant` account could log in to a game like any player, but claude.ai never holds a token valid for the games: Customization → Policies → Create → Expression Policy `deny-assistant-group`:
-   ```python
-   return not ak_is_group_member(request.user, name="assistant")
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `BASE_URL` | yes | Public HTTPS URL of the server; the MCP endpoint is `$BASE_URL/mcp` |
+| `BRAIN_REPO` | yes | Notes repository, cloned on first start (SSH URL, used with `./deploy_key`) |
+| `OIDC_CONFIG_URL` | yes | OpenID configuration URL of the identity provider |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | yes | OIDC client registered for this server |
+| `ALLOWED_USERNAME` | yes | The only account allowed (`preferred_username` claim) |
+| `JWT_SIGNING_KEY` | yes | Signs issued tokens and encrypts the OAuth state (`openssl rand -base64 36`) |
+| `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL` | yes | Identity of the commits |
+| `ALLOWED_REDIRECT_URIS` | no | Comma-separated redirect URI patterns MCP clients may register; empty: any client |
+| `SYNC_HOST_LABEL` | no | Name in the commit messages (default `brain-mcp`) |
+| `INDEX_NOTE` | no | Index note (e.g. `_index.md`), protected and pointed to by every tool |
+| `BRAIN_INSTRUCTIONS` | no | Your own conventions (language, folder layout…), appended to the server instructions |
+| `TZ` | no | Time zone of the commit dates |
+| `PORT` | no | Listening port (default `8000`) |
+
+## Deployment
+
+Prerequisites: Docker with Compose, a git repository holding the notes (e.g. on GitHub), an HTTPS
+reverse proxy, and an OpenID Connect provider.
+
+1. **Deploy key**: next to `docker-compose.yml`, create a key and give it write access to the
+   notes repository (on GitHub: repository settings → Deploy keys, "Allow write access"):
+
+   ```bash
+   ssh-keygen -t ed25519 -f deploy_key -N "" -C brain-mcp
+   sudo chown 1000:1000 deploy_key && chmod 600 deploy_key   # the container runs as uid 1000
+   cat deploy_key.pub
    ```
-   Bind it to every game application (e.g. Fisharia), then check that a player can still log in to the game.
-7. **Enroll the second factor right away**: open `https://auth.globostofo.net/if/flow/assistant-authentication/` in a private window, log in as `assistant` and scan the TOTP QR code. Until this is done, anyone with the password could enroll their own device.
 
-claude.ai never receives SSO tokens: the server keeps them and gives claude.ai its own tokens, only valid for this server.
+   The image trusts GitHub's published SSH host key; for another git host, add its key to
+   `/etc/ssh/ssh_known_hosts` in the `Dockerfile`.
 
-### 3. Environment
+2. **OIDC client** at your identity provider:
+   - confidential client, redirect URI `<BASE_URL>/auth/callback`;
+   - scopes `openid`, `profile`, `email` and `offline_access` (without it no refresh token is
+     issued, and clients are logged out when the access token expires);
+   - an RS256 signing key;
+   - access restricted to the account that will use the server, ideally with a second factor.
+3. **Environment**:
 
-**[prod — RPi]**
+   ```bash
+   cp .env.example .env
+   openssl rand -base64 36   # JWT_SIGNING_KEY
+   nano .env
+   ```
 
-```bash
-cp .env.example .env
+4. **Run**:
 
-# JWT_SIGNING_KEY
-openssl rand -base64 36
+   ```bash
+   docker compose up -d --build
+   docker compose logs -f brain-mcp
+   ```
 
-# Fill in OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and JWT_SIGNING_KEY (ALLOWED_USERNAME=assistant is already set)
-nano .env
-```
+   The first start clones the notes repository into the `vault` volume. OAuth state (registered
+   clients, tokens) lives in the `oauth` volume. The container listens on `127.0.0.1:8000`; point
+   the reverse proxy for `BASE_URL` at it (reverse proxy labels or networks can go in a
+   `docker-compose.override.yml`, which is git-ignored).
 
-## Deploy
+5. **Check**:
 
-**[prod — RPi]**
+   ```bash
+   # Both must point to BASE_URL, not to the identity provider
+   curl -s "$BASE_URL/.well-known/oauth-protected-resource/mcp"
+   curl -s "$BASE_URL/.well-known/oauth-authorization-server"
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose logs -f brain
-```
+   # Must return 401
+   curl -s -o /dev/null -w "%{http_code}\n" -X POST "$BASE_URL/mcp"
+   ```
 
-The first start clones the notes repository into the `vault` volume. OAuth state (registered clients, tokens) lives in the `oauth` volume, encrypted with `JWT_SIGNING_KEY`.
+6. **Connect a client**: add a remote MCP server with URL `<BASE_URL>/mcp` and no client
+   credentials (the server supports dynamic client registration), then log in with the allowed
+   account.
 
-Update:
-
-```bash
-git pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
-
-## Check
-
-**[dev]**
-
-```bash
-# Both must point to https://brain.globostofo.net (not to the SSO domain)
-curl -s https://brain.globostofo.net/.well-known/oauth-protected-resource/mcp
-curl -s https://brain.globostofo.net/.well-known/oauth-authorization-server
-
-# Must return 401
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://brain.globostofo.net/mcp
-```
-
-## Add the connector in claude.ai
-
-**[claude.ai — browser]** Settings → Connectors → Add custom connector:
-
-- Name: `Brain`
-- URL: `https://brain.globostofo.net/mcp`
-- Leave the advanced OAuth settings empty (the server supports dynamic client registration)
-
-Then Connect, log in with the `assistant` account (password + second factor) and approve. If the browser already has an SSO session with another account (e.g. a player account), the SSO reuses it and denies access: log out of `auth.globostofo.net` first, or connect from a private window. The connector is then available on web, desktop and mobile.
+Update: `git pull && docker compose up -d --build`.
 
 ## Development
-
-**[dev]**
 
 ```bash
 python3 -m venv .venv
@@ -148,16 +169,22 @@ python3 -m venv .venv
 .venv/bin/pytest
 ```
 
-Tests use a local bare repository as the remote: no network access, no GitHub push.
+Tests use a local bare repository as the remote, plus a second clone standing in for another
+machine pushing concurrently: no network access.
 
-Run locally without auth, on a throwaway clone (refused when `BASE_URL` is https):
+Run locally without auth on a throwaway copy of the notes (refused when `BASE_URL` is HTTPS), then
+explore the tools with the MCP Inspector:
 
 ```bash
-git clone -q --bare ~/brain /tmp/brain-origin.git
+git clone -q --bare <notes-repo> /tmp/brain-origin.git
 BRAIN_NO_AUTH=1 BASE_URL=http://localhost:8000 BRAIN_DIR=/tmp/brain-test \
   BRAIN_REPO=/tmp/brain-origin.git .venv/bin/brain-mcp
 
 npx @modelcontextprotocol/inspector   # connect to http://localhost:8000/mcp
 ```
 
-Writes are pushed to `/tmp/brain-origin.git`, never to GitHub.
+Writes are pushed to `/tmp/brain-origin.git`, never to the real repository.
+
+## License
+
+[MIT](LICENSE)
