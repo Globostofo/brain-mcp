@@ -168,20 +168,21 @@ class Vault:
             return self._rel(path), path.read_text(encoding="utf-8")
 
     def folder_index(self, rel: str) -> str | None:
-        """Nearest folder index note (`index-*.md`) for a note: its own folder, then its
-        top-level folder. The note itself is never returned. Notes at the root have none."""
+        """Nearest folder index note (`index-*.md`) for a note: its own folder, then each
+        parent folder up to the vault root. The note itself is never returned. If a folder
+        holds several, `index-<folder>.md` wins, else the first in sorted order."""
         parts = rel.split("/")[:-1]
-        folders = [parts[0]] if parts else []
-        if len(parts) > 1:
-            folders.insert(0, "/".join(parts))
-        for folder in folders:
-            base = self.root / folder
+        for depth in range(len(parts), -1, -1):
+            folder = "/".join(parts[:depth])
+            prefix = f"{folder}/" if folder else ""
             found = sorted(
-                p.name for p in base.glob("index-*.md") if p.is_file() and f"{folder}/{p.name}" != rel
+                p.name
+                for p in (self.root / folder).glob("index-*.md")
+                if p.is_file() and f"{prefix}{p.name}" != rel
             )
             if found:
-                preferred = f"index-{folder.rsplit('/', 1)[-1]}.md"
-                return f"{folder}/{preferred if preferred in found else found[0]}"
+                preferred = f"index-{parts[depth - 1]}.md" if depth else None
+                return prefix + (preferred if preferred in found else found[0])
         return None
 
     def write(self, rel: str, content: str) -> tuple[str, bool]:

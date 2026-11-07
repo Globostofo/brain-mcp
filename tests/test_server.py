@@ -120,6 +120,17 @@ async def test_reminder_folder_index_top_level(folder_server) -> None:
 @pytest.mark.anyio
 async def test_reminder_nearest_folder_index(folder_server) -> None:
     assert "`projects/demo/index-demo.md`" in await _write(folder_server, "projects/demo/z.md")
+    # Folders without an index are skipped, one level at a time
+    out = await _write(folder_server, "projects/demo/sub/deep/w.md")
+    assert "`projects/demo/index-demo.md`" in out
+
+
+@pytest.mark.anyio
+async def test_reminder_root_folder_index(origin: Path, tmp_path: Path) -> None:
+    root = clone(origin, tmp_path / "vault")
+    (root / "index-root.md").write_text("# Root\n")
+    server = build_server(Vault(root, pull_interval=0, index_note="_index"))
+    assert "folder index `index-root.md`" in await _write(server, "setup/new.md")
 
 
 @pytest.mark.anyio
