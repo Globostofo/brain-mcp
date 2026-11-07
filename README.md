@@ -80,6 +80,9 @@ Code layout (`src/brain_mcp/`):
   it there. Some MCP clients pass tool descriptions to the model but not the server instructions,
   so this one line is repeated in every tool; the deployment's own conventions
   (`BRAIN_INSTRUCTIONS`) only go into the server instructions, to keep tool descriptions short.
+- **Folder index notes.** Folder index notes named `index-*.md` are detected automatically: when a
+  note is created, the reminder points to the nearest one (its own folder, then its top-level
+  folder; `index-<folder>.md` wins if there are several) instead of the root `INDEX_NOTE`.
 
 ## Configuration
 

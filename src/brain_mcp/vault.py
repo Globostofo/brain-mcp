@@ -167,6 +167,23 @@ class Vault:
                 raise VaultError(f"No such note: {name}")
             return self._rel(path), path.read_text(encoding="utf-8")
 
+    def folder_index(self, rel: str) -> str | None:
+        """Nearest folder index note (`index-*.md`) for a note: its own folder, then its
+        top-level folder. The note itself is never returned. Notes at the root have none."""
+        parts = rel.split("/")[:-1]
+        folders = [parts[0]] if parts else []
+        if len(parts) > 1:
+            folders.insert(0, "/".join(parts))
+        for folder in folders:
+            base = self.root / folder
+            found = sorted(
+                p.name for p in base.glob("index-*.md") if p.is_file() and f"{folder}/{p.name}" != rel
+            )
+            if found:
+                preferred = f"index-{folder.rsplit('/', 1)[-1]}.md"
+                return f"{folder}/{preferred if preferred in found else found[0]}"
+        return None
+
     def write(self, rel: str, content: str) -> tuple[str, bool]:
         """Returns the note path and whether the note was created."""
         with self._lock:

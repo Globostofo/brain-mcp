@@ -145,6 +145,12 @@ def build_server(
         if not created:
             return f"Saved {rel}"
         link = "[[" + rel.rsplit("/", 1)[-1].removesuffix(".md") + "]]"
+        folder_index = vault.folder_index(rel)
+        if folder_index:
+            return (
+                f"Created {rel}. Reminder: this is a new note. If it matters, add it to its folder "
+                f"index `{folder_index}` (with `edit_note`), and link it from related notes (`{link}`)."
+            )
         if not vault.index_note:
             return f"Created {rel}. Reminder: link it from related notes (`{link}`)."
         return (

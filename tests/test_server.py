@@ -92,5 +92,56 @@ async def test_extra_instructions(origin: Path, tmp_path: Path) -> None:
 
 
 @pytest.fixture
+def folder_server(origin: Path, tmp_path: Path):
+    root = clone(origin, tmp_path / "vault")
+    (root / "projects" / "demo").mkdir(exist_ok=True)
+    (root / "projects" / "index-projets.md").write_text("# Projects\n")
+    (root / "projects" / "demo" / "index-demo.md").write_text("# Demo\n")
+    (root / "ref").mkdir()
+    (root / "ref" / "index-a.md").write_text("a\n")
+    (root / "ref" / "index-ref.md").write_text("r\n")
+    return build_server(Vault(root, pull_interval=0, index_note="_index"))
+
+
+async def _write(server, path: str) -> str:
+    async with Client(server) as client:
+        return (await client.call_tool("write_note", {"path": path, "content": "x\n"})).data
+
+
+@pytest.mark.anyio
+async def test_reminder_folder_index_top_level(folder_server) -> None:
+    out = await _write(folder_server, "projects/other/x.md")
+    assert "folder index `projects/index-projets.md`" in out and "[[x]]" in out
+    assert "_index.md" not in out
+    # Several candidates: index-<folder>.md wins
+    assert "`ref/index-ref.md`" in await _write(folder_server, "ref/y.md")
+
+
+@pytest.mark.anyio
+async def test_reminder_nearest_folder_index(folder_server) -> None:
+    assert "`projects/demo/index-demo.md`" in await _write(folder_server, "projects/demo/z.md")
+
+
+@pytest.mark.anyio
+async def test_reminder_root_index_fallback(folder_server) -> None:
+    out = await _write(folder_server, "setup/new.md")
+    assert "`_index.md`" in out and "folder index" not in out
+
+
+@pytest.mark.anyio
+async def test_reminder_root_note_ignores_folder_indexes(folder_server) -> None:
+    out = await _write(folder_server, "index-top.md")
+    assert "`_index.md`" in out and "folder index" not in out
+
+
+@pytest.mark.anyio
+async def test_reminder_creating_the_index_itself(folder_server) -> None:
+    out = await _write(folder_server, "setup/index-setup.md")
+    assert "`_index.md`" in out and "folder index" not in out
+    out = await _write(folder_server, "ref/index-new.md")
+    assert "`ref/index-ref.md`" in out
+
+
+@pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
